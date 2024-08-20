@@ -15,71 +15,113 @@
   You should have received a copy of the GNU General Public License along with
   this program.  If not, see <https://www.gnu.org/licenses/gpl-3.0.html>.
 
+  Further modifications under the same terms by Ira Peach
+  <yoshi_says_acab@proton.me>.
+
 ]]
 
 --[[
-  A simple widget to show whether Caps Lock is active.
+
+  A simple widget to show LED statuses for Num Lock, Caps Lock, and Scroll
+  Lock.  Allows for the creation of custom LED statuses if given the correct
+  key code and pattern.
+
   Requirements:
   - Awesome 4.x
   - xset
 
   @usage
-  capslock = require("capslock")
+  local led_status = require("led_status")
+
+  -- standard LEDs
+  local num_lock = led_status.num_lock()
+  local caps_lock = led_status.caps_lock()
+  local scroll_lock = led_status.scoll_lock()
+
+  -- custom LED definition
+  local mute_led = led_status.create("Mute", "M", "m", "XF86AudioMute", "Output mute")
+
   -- Add widget to wibox
   s.mywibox:setup {
-  layout = wibox.layout.align.horizontal,
-  { -- Left widgets
-    layout = wibox.layout.fixed.horizontal,
-    capslock
-  }
+    layout = wibox.layout.align.horizontal,
+    { -- Left widgets
+      layout = wibox.layout.fixed.horizontal,
+      num_lock,
+      caps_lock,
+      scroll_lock,
+      mute_led
+    }
   -- more stuff
   }
+
   -- Add key to globalkeys
-  globalkeys = awful.util.table.join(globalkeys, capslock.key)
+  globalkeys = awful.util.table.join(globalkeys,
+    num_lock.key,
+    caps_lock.key,
+    scroll_lock.key,
+    mute_led.key)
 
 ]]
 
 local awful = require("awful")
 local wibox = require("wibox")
 
-local capslock = wibox.widget {
-  widget = wibox.widget.textbox,
-  align = "center",
-  valign = "center",
-  forced_width = 15,
-}
+local led_status = {}
 
-capslock.activated = "<b>A</b>"
-capslock.deactivated = "<b>a</b>"
+function led_status.create(pattern, active, inactive, key, friendly_name)
+  friendly_name = friendly_name or pattern
+  local led = wibox.widget {
+    widget = wibox.widget.textbox,
+    align = "center",
+    valign = "center",
+    forced_width = 15,
+  }
 
-local tooltip = awful.tooltip({})
+  led.activated = "<b>" .. active .. "</b>"
+  led.deactivated = "<b>" .. inactive .. "</b>"
 
-tooltip:add_to_object(capslock)
+  local tooltip = awful.tooltip({})
 
-function capslock:check()
-  awful.spawn.with_line_callback(
-    "bash -c 'sleep 0.2 && xset q'",
-    {
-      stdout = function (line)
-        if line:match("Caps Lock") then
-          local status = line:gsub(".*(Caps Lock:%s+)(%a+).*", "%2")
-          tooltip.text = "Caps Lock " .. status
-          if status == "on" then
-            self.markup = self.activated
-          else
-            self.markup = self.deactivated
+  tooltip:add_to_object(led)
+
+  function led:check()
+    awful.spawn.with_line_callback(
+      "bash -c 'sleep 0.2 && xset q'",
+      {
+        stdout = function (line)
+          if line:match(pattern) then
+            local status = line:gsub(".*(" .. pattern .. ":%s+)(%a+).*", "%2")
+            tooltip.text = pattern .. " " .. status
+            if status == "on" then
+              self.markup = self.activated
+            else
+              self.markup = self.deactivated
+            end
           end
         end
-      end
-    }
-  )
+      }
+    )
+  end
+
+  led.key = awful.key(
+    {},
+    key,
+    function () led:check() end)
+
+  led:check()
+  return led
 end
 
-capslock.key = awful.key(
-  {},
-  "Caps_Lock",
-  function () capslock:check() end)
+function led_status.caps_lock()
+  return led_status.create("Caps Lock", "A", "a", "Caps_Lock")
+end
 
-capslock:check()
+function led_status.num_lock()
+  return led_status.create("Num Lock", "N", "n", "Num_Lock")
+end
 
-return capslock
+function led_status.scroll_lock()
+  return led_status.create("Scroll Lock", "S", "s", "Scroll_Lock")
+end
+
+return led_status
